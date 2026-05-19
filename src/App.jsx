@@ -243,14 +243,9 @@ async function callClaude(system, user, imgB64, imgType) {
   const content = []
   if (imgB64) content.push({ type: 'image', source: { type: 'base64', media_type: imgType, data: imgB64 } })
   content.push({ type: 'text', text: user })
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetch('/api/chat', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': import.meta.env.VITE_ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1000, system, messages: [{ role: 'user', content }] })
   })
   const data = await res.json()
