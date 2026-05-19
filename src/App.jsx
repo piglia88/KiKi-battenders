@@ -9,8 +9,8 @@ const css = `
 html, body, #root { height: 100%; background: #080604; }
 
 .app {
-  max-width: 430px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: 100%;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -86,7 +86,7 @@ html, body, #root { height: 100%; background: #080604; }
 .tab-icon { font-size: 22px; }
 
 /* CONTENT */
-.content { flex: 1; padding: 1.25rem; overflow-y: auto; }
+.content { flex: 1; padding: 1.25rem; overflow-y: auto; max-width: 500px; width: 100%; margin: 0 auto; }
 
 /* UPLOAD ZONE */
 .upload-zone {
