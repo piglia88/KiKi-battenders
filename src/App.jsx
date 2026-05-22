@@ -1,6 +1,41 @@
 import { useState, useEffect, useRef } from 'react'
+import { initializeApp } from 'firebase/app'
+import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore'
 
+const firebaseConfig = {
+  apiKey: "AIzaSyCRavwYMi1g0HHYh1lNzizUKAUaHd4yu50",
+  authDomain: "app-bartenders.firebaseapp.com",
+  projectId: "app-bartenders",
+  storageBucket: "app-bartenders.firebasestorage.app",
+  messagingSenderId: "837598192203",
+  appId: "1:837598192203:web:33fe76614cb882fc83e3ce"
+}
+
+const firebaseApp = initializeApp(firebaseConfig)
+const db = getFirestore(firebaseApp)
 const MODEL = 'claude-sonnet-4-5'
+
+const CATEGORIAS = ['Whisky','Vodka','Gin','Tequila','Ron','Champagne','Cognac','Licor','Vino','Cerveza','Otro']
+
+const CAT_EMOJI = {
+  'Whisky':'🥃','Vodka':'🫗','Gin':'🫙','Tequila':'🌵','Ron':'🍾',
+  'Champagne':'🥂','Cognac':'🥃','Licor':'🍶','Vino':'🍷','Cerveza':'🍺','Otro':'🍾'
+}
+
+function detectarCategoria(nombre, tipo) {
+  const n = (nombre + ' ' + tipo).toLowerCase()
+  if (/whisky|whiskey|bourbon|scotch|johnnie|jack daniel|chivas|glenlivet|ballantine|crown|jameson|glenfiddich/.test(n)) return 'Whisky'
+  if (/vodka|absolut|grey goose|ciroc|pravda|ketel|belvedere/.test(n)) return 'Vodka'
+  if (/gin|beefeater|bombay|bulldog|tanqueray|hendricks/.test(n)) return 'Gin'
+  if (/tequila|mezcal|patron|don julio|olmeca|jose cuervo/.test(n)) return 'Tequila'
+  if (/ron|rum|bacardi|havana|zacapa|diplomatico/.test(n)) return 'Ron'
+  if (/champagne|champán|moet|armand|veuve|perrier|chandon|espumante/.test(n)) return 'Champagne'
+  if (/cognac|hennessy|remy|martell|courvoisier/.test(n)) return 'Cognac'
+  if (/licor|baileys|amaretto|cointreau|kahlua|aperol|campari|vermouth/.test(n)) return 'Licor'
+  if (/vino|wine|malbec|cabernet|chardonnay/.test(n)) return 'Vino'
+  if (/cerveza|beer|stella|corona|heineken/.test(n)) return 'Cerveza'
+  return 'Otro'
+}
 
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
@@ -12,7 +47,9 @@ html,body,#root{height:100%;background:#05040A;}
 .header{padding:2rem 1.5rem 1.5rem;text-align:center;border-bottom:1px solid #1C1508;}
 .header-line{width:40px;height:1px;background:#8B6914;margin:0 auto 1rem;}
 .logo{font-family:'Cormorant Garamond',serif;font-size:34px;font-weight:700;color:#C9A227;letter-spacing:4px;line-height:1;}
-.logo-sub{font-size:9px;color:#5A4520;letter-spacing:5px;text-transform:uppercase;margin-top:6px;}
+.sync-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#3A2A10;margin-right:6px;vertical-align:middle;}
+.sync-dot.ok{background:#4A7A30;}
+.sync-status{font-size:10px;color:#3A2A10;letter-spacing:1px;margin-top:6px;}
 
 .nav{display:flex;background:#05040A;border-bottom:1px solid #1C1508;}
 .nav-btn{flex:1;padding:14px 4px 12px;font-size:9px;font-weight:600;letter-spacing:2px;text-transform:uppercase;border:none;background:transparent;color:#3A2A10;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;transition:color 0.2s;}
@@ -27,15 +64,19 @@ html,body,#root{height:100%;background:#05040A;}
 .valor-num{font-family:'Cormorant Garamond',serif;font-size:32px;color:#C9A227;line-height:1;}
 .valor-sub{font-size:11px;color:#3A2A10;margin-top:2px;}
 
-.shelf-label{font-size:9px;letter-spacing:3px;text-transform:uppercase;color:#3A2A10;margin-bottom:1rem;}
-.shelf-surface{background:#0E0A04;border:1px solid #1C1508;border-radius:4px;padding:1rem;display:flex;flex-wrap:wrap;gap:10px;min-height:80px;align-items:flex-start;}
+.cat-section{margin-bottom:1.5rem;}
+.cat-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #1C1508;}
+.cat-icon{font-size:18px;}
+.cat-name{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#5A4520;font-weight:600;}
+.cat-count{font-size:10px;color:#3A2A10;margin-left:auto;}
+
+.shelf-surface{background:#0E0A04;border:1px solid #1C1508;border-radius:4px;padding:1rem;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;}
 .shelf-empty{width:100%;text-align:center;font-size:13px;color:#3A2A10;padding:1.5rem 0;font-style:italic;}
 
 .bottle{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;width:calc(25% - 8px);position:relative;}
 .bottle-img{width:52px;height:52px;border-radius:8px;object-fit:cover;border:1px solid #2A1A08;}
 .bottle-emoji-box{width:52px;height:52px;border-radius:8px;background:#1A1205;border:1px solid #2A1A08;display:flex;align-items:center;justify-content:center;font-size:26px;}
-.bottle.active .bottle-img{border-color:#C9A227;}
-.bottle.active .bottle-emoji-box{border-color:#C9A227;}
+.bottle.active .bottle-img,.bottle.active .bottle-emoji-box{border-color:#C9A227;}
 .bottle-qty{position:absolute;top:-6px;right:2px;background:#C9A227;color:#05040A;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;min-width:18px;text-align:center;}
 .bottle-label{font-size:10px;color:#5A4520;text-align:center;line-height:1.3;max-width:60px;word-break:break-word;}
 .bottle.active .bottle-label{color:#C9A227;}
@@ -52,8 +93,11 @@ html,body,#root{height:100%;background:#05040A;}
 
 .qty-row{display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:10px 0;border-top:1px solid #1C1508;border-bottom:1px solid #1C1508;}
 .qty-label{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#3A2A10;flex:1;}
-.qty-btn{width:30px;height:30px;border-radius:6px;border:1px solid #2A1A08;background:#1A1205;color:#C9A227;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;}
+.qty-btn{width:30px;height:30px;border-radius:6px;border:1px solid #2A1A08;background:#1A1205;color:#C9A227;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
 .qty-num{font-family:'Cormorant Garamond',serif;font-size:22px;color:#C9A227;min-width:30px;text-align:center;}
+
+.price-row{display:flex;align-items:center;gap:8px;margin-bottom:12px;}
+.price-input{flex:1;padding:8px 12px;border-radius:6px;border:1px solid #2A1A08;background:#1A1205;color:#C9A227;font-size:14px;font-family:'Cormorant Garamond',serif;outline:none;}
 
 .bd-actions{display:flex;gap:8px;}
 .btn{padding:11px 18px;border-radius:6px;font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:1px solid #2A1A08;background:#0E0A04;color:#7A5A28;transition:all 0.15s;display:flex;align-items:center;justify-content:center;gap:8px;}
@@ -62,15 +106,12 @@ html,body,#root{height:100%;background:#05040A;}
 .btn.gold:active{background:#A88520;}
 .btn.full{width:100%;}
 .btn.sm{padding:7px 14px;font-size:11px;}
-.btn.danger{color:#8A3020;border-color:#3A1A10;}
 
 .sep{height:1px;background:#1C1508;margin:1.5rem 0;}
-
-.upload-zone{border:1px dashed #2A1A08;border-radius:8px;padding:1.5rem 1rem;text-align:center;cursor:pointer;margin-bottom:10px;background:#0E0A04;transition:border-color 0.2s;}
-.upload-zone:active{border-color:#C9A22740;}
+.upload-zone{border:1px dashed #2A1A08;border-radius:8px;padding:1.5rem 1rem;text-align:center;cursor:pointer;margin-bottom:10px;background:#0E0A04;}
 .upload-icon{font-size:32px;display:block;margin-bottom:8px;}
 .upload-title{font-size:13px;color:#7A5A28;font-weight:500;}
-.upload-sub{font-size:11px;color:#3A2A10;margin-top:3px;letter-spacing:0.5px;}
+.upload-sub{font-size:11px;color:#3A2A10;margin-top:3px;}
 
 .carta-title{font-family:'Cormorant Garamond',serif;font-size:28px;color:#C9A227;text-align:center;margin-bottom:4px;}
 .carta-sub{font-size:9px;letter-spacing:3px;text-transform:uppercase;color:#3A2A10;text-align:center;margin-bottom:1rem;}
@@ -79,11 +120,11 @@ html,body,#root{height:100%;background:#05040A;}
 .trago-card{background:#0E0A04;border:1px solid #1C1508;border-radius:8px;padding:1.25rem;margin-bottom:10px;cursor:pointer;}
 .trago-top{display:flex;justify-content:space-between;align-items:flex-start;}
 .trago-nombre{font-family:'Cormorant Garamond',serif;font-size:20px;color:#E8D08A;line-height:1.1;}
-.trago-garnish{font-size:10px;padding:3px 10px;border-radius:20px;background:#1A1205;color:#6A4A20;border:1px solid #2A1A08;letter-spacing:0.5px;}
+.trago-garnish{font-size:10px;padding:3px 10px;border-radius:20px;background:#1A1205;color:#6A4A20;border:1px solid #2A1A08;}
 .trago-desc{font-size:13px;color:#4A3A20;margin-top:8px;line-height:1.6;font-style:italic;}
 .trago-receta{margin-top:12px;padding-top:12px;border-top:1px solid #1C1508;font-size:13px;color:#8A6A40;line-height:1.9;}
 .trago-receta-title{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#3A2A10;margin-bottom:8px;}
-.trago-toggle{font-size:10px;color:#3A2A10;text-align:right;margin-top:8px;letter-spacing:1px;}
+.trago-toggle{font-size:10px;color:#3A2A10;text-align:right;margin-top:8px;}
 
 .noche-form{background:#0E0A04;border:1px solid #1C1508;border-radius:8px;padding:1.25rem;margin-bottom:1rem;}
 .noche-label{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#3A2A10;margin-bottom:8px;display:block;}
@@ -98,7 +139,6 @@ html,body,#root{height:100%;background:#05040A;}
 .msg.user{background:#C9A227;color:#05040A;align-self:flex-end;font-weight:600;border-bottom-right-radius:3px;font-style:normal;}
 .chat-suggestions{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
 .chat-sug{font-size:11px;padding:5px 12px;border-radius:20px;border:1px solid #2A1A08;background:#05040A;color:#5A4520;cursor:pointer;}
-.chat-sug:active{border-color:#C9A227;color:#C9A227;}
 .chat-row{display:flex;gap:8px;}
 .chat-input{flex:1;padding:12px 16px;border-radius:8px;border:1px solid #2A1A08;background:#0E0A04;color:#E8D08A;font-size:14px;outline:none;font-family:'Inter',sans-serif;}
 .chat-input::placeholder{color:#2A1A08;}
@@ -110,33 +150,19 @@ html,body,#root{height:100%;background:#05040A;}
 .empty{text-align:center;padding:3rem 1rem;color:#2A1A08;font-size:13px;line-height:2;font-style:italic;}
 `
 
-const EMOJIS = {
-  'whisky':'🥃','whiskey':'🥃','bourbon':'🥃','scotch':'🥃','johnnie':'🥃','jack':'🥃','chivas':'🥃','glenlivet':'🥃','ballantine':'🥃','crown':'🥃','hennessy':'🥃','cognac':'🥃','brandy':'🥃',
-  'gin':'🫙','beefeater':'🫙','bombay':'🫙','bulldog':'🫙','tanqueray':'🫙',
-  'vodka':'🫗','absolut':'🫗','grey goose':'🫗','ciroc':'🫗','pravda':'🫗',
-  'ron':'🍾','rum':'🍾','bacardi':'🍾','havana':'🍾',
-  'tequila':'🌵','mezcal':'🌵','patron':'🌵','don julio':'🌵',
-  'champagne':'🥂','moet':'🥂','armand':'🥂','veuve':'🥂',
-  'campari':'🍷','aperol':'🍊','vermouth':'🍸',
-}
-
-function getEmoji(nombre) {
-  const n = nombre.toLowerCase()
-  for (const [k, v] of Object.entries(EMOJIS)) if (n.includes(k)) return v
-  return '🍾'
-}
-
-async function api(system, user, imgB64, imgType) {
+async function api(system, user, imgB64, imgType, useWebSearch = false) {
   const content = []
   if (imgB64) content.push({ type: 'image', source: { type: 'base64', media_type: imgType, data: imgB64 } })
   content.push({ type: 'text', text: user })
+  const body = { model: MODEL, max_tokens: 1000, system, messages: [{ role: 'user', content }] }
+  if (useWebSearch) body.useWebSearch = true
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, max_tokens: 1000, system, messages: [{ role: 'user', content }] })
+    body: JSON.stringify(body)
   })
   const data = await res.json()
-  return data.content?.find(c => c.type === 'text')?.text || ''
+  return data.textOnly || data.content?.find(c => c.type === 'text')?.text || ''
 }
 
 function comprimirFoto(file) {
@@ -159,11 +185,11 @@ function comprimirFoto(file) {
 
 export default function App() {
   const [tab, setTab] = useState('barra')
-  // botellas: [{nombre, tipo, precio, cantidad, foto}]
-  const [botellas, setBotellas] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('kb_v3') || '[]') } catch { return [] }
-  })
-  const [selIdx, setSelIdx] = useState(null)
+  const [botellas, setBotellas] = useState([])
+  const [cargando, setCargando] = useState(true)
+  const [guardando, setGuardando] = useState(false)
+  const [selKey, setSelKey] = useState(null) // "categoria-index"
+  const [editPrecio, setEditPrecio] = useState('')
   const [tragos, setTragos] = useState([])
   const [tragoOpen, setTragoOpen] = useState(null)
   const [msgs, setMsgs] = useState([{ role: 'bot', text: 'Buenas noches.\n\nSoy tu bartender personal. Conozco tu barra y puedo inventarte algo a medida.\n\n¿Qué estamos preparando esta noche?' }])
@@ -174,46 +200,78 @@ export default function App() {
   const [nocheModo, setNocheModo] = useState(false)
   const [nochePrefs, setNochePrefs] = useState([])
   const msgsEnd = useRef(null)
-  const fotoRef = useRef(null)
 
-  useEffect(() => { localStorage.setItem('kb_v3', JSON.stringify(botellas)) }, [botellas])
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'barra', 'botellas'), snap => {
+      if (snap.exists()) setBotellas(snap.data().items || [])
+      setCargando(false)
+    }, () => setCargando(false))
+    return () => unsub()
+  }, [])
+
   useEffect(() => { msgsEnd.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
 
-  const setBotellasPersist = b => setBotellas(b)
-
-  const agregarOSumar = (nueva) => {
-    setBotellas(prev => {
-      const idx = prev.findIndex(b => b.nombre.toLowerCase() === nueva.nombre.toLowerCase())
-      if (idx >= 0) {
-        const copia = [...prev]
-        copia[idx] = { ...copia[idx], cantidad: (copia[idx].cantidad || 1) + (nueva.cantidad || 1) }
-        return copia
-      }
-      return [...prev, { ...nueva, cantidad: nueva.cantidad || 1 }]
-    })
+  const guardarBotellas = async (nuevas) => {
+    setBotellas(nuevas)
+    setGuardando(true)
+    try { await setDoc(doc(db, 'barra', 'botellas'), { items: nuevas }) } catch (e) { }
+    setGuardando(false)
   }
 
-  const cambiarCantidad = (idx, delta) => {
-    setBotellas(prev => {
-      const copia = [...prev]
-      const nueva = (copia[idx].cantidad || 1) + delta
-      if (nueva <= 0) {
-        if (!window.confirm('¿Eliminás esta botella de la barra?')) return prev
-        setSelIdx(null)
-        return copia.filter((_, i) => i !== idx)
-      }
-      copia[idx] = { ...copia[idx], cantidad: nueva }
+  const agregarOSumar = (nueva, base) => {
+    const arr = base || botellas
+    const idx = arr.findIndex(b => b.nombre.toLowerCase() === nueva.nombre.toLowerCase())
+    if (idx >= 0) {
+      const copia = [...arr]
+      copia[idx] = { ...copia[idx], cantidad: (copia[idx].cantidad || 1) + (nueva.cantidad || 1) }
       return copia
-    })
+    }
+    return [...arr, { ...nueva, cantidad: nueva.cantidad || 1, categoria: detectarCategoria(nueva.nombre, nueva.tipo || '') }]
   }
 
-  const subirFotoBotella = async (file, idx) => {
+  const getBotellaPorKey = (key) => {
+    if (!key) return null
+    const [cat, idxStr] = key.split('-')
+    const grupo = botellas.filter(b => (b.categoria || detectarCategoria(b.nombre, b.tipo||'')) === cat)
+    return { botella: grupo[parseInt(idxStr)], cat, localIdx: parseInt(idxStr) }
+  }
+
+  const getGlobalIdx = (cat, localIdx) => {
+    const grupo = botellas.filter(b => (b.categoria || detectarCategoria(b.nombre, b.tipo||'')) === cat)
+    const botella = grupo[localIdx]
+    return botellas.findIndex(b => b.nombre === botella.nombre)
+  }
+
+  const cambiarCantidad = (key, delta) => {
+    const { cat, localIdx } = getBotellaPorKey(key)
+    const gIdx = getGlobalIdx(cat, localIdx)
+    const copia = [...botellas]
+    const nueva = (copia[gIdx].cantidad || 1) + delta
+    if (nueva <= 0) {
+      if (!window.confirm('¿Eliminás esta botella?')) return
+      setSelKey(null)
+      guardarBotellas(copia.filter((_, i) => i !== gIdx))
+      return
+    }
+    copia[gIdx] = { ...copia[gIdx], cantidad: nueva }
+    guardarBotellas(copia)
+  }
+
+  const guardarPrecio = (key) => {
+    const { cat, localIdx } = getBotellaPorKey(key)
+    const gIdx = getGlobalIdx(cat, localIdx)
+    const copia = [...botellas]
+    copia[gIdx] = { ...copia[gIdx], precio: parseInt(editPrecio.replace(/\D/g, '')) || 0 }
+    guardarBotellas(copia)
+  }
+
+  const subirFotoBotella = async (file, key) => {
+    const { cat, localIdx } = getBotellaPorKey(key)
+    const gIdx = getGlobalIdx(cat, localIdx)
     const b64 = await comprimirFoto(file)
-    setBotellas(prev => {
-      const copia = [...prev]
-      copia[idx] = { ...copia[idx], foto: b64 }
-      return copia
-    })
+    const copia = [...botellas]
+    copia[gIdx] = { ...copia[gIdx], foto: b64 }
+    guardarBotellas(copia)
   }
 
   const analizarFotoGrupal = file => {
@@ -223,13 +281,15 @@ export default function App() {
       const b64 = e.target.result.split(',')[1]
       try {
         const txt = await api(
-          'Experto en bebidas premium. Analizá la foto y devolvé SOLO JSON array sin markdown ni texto extra. Cada objeto: {"nombre":"nombre completo incluyendo variedad","tipo":"categoría","precio_ars":número}. IMPORTANTE: el nombre debe incluir SIEMPRE la variedad completa. Ejemplos correctos: "Johnnie Walker Red Label", "Johnnie Walker Blue Label", "Absolut Vodka Original", "Absolut Vanilla", "Moët & Chandon Brut", "Armand de Brignac Brut Gold". NUNCA pongas solo la marca sin la variedad. precio_ars = precio estimado en pesos argentinos mayo 2025 (Johnnie Walker Red ~45000, Black ~80000, Blue ~350000, Absolut ~35000, Grey Goose ~90000, Bombay Sapphire ~70000, Hennessy VS ~120000, Moët Brut ~180000).',
-          'Identificá todas las botellas visibles en la foto.',
+          'Experto en bebidas premium. Analizá la foto y devolvé SOLO JSON array sin markdown. Cada objeto: {"nombre":"nombre completo con variedad","tipo":"categoría","precio_ars":número}. SIEMPRE incluí la variedad: "Johnnie Walker Red Label", "Absolut Vanilla", "Moët & Chandon Brut". precio_ars estimado Argentina 2025.',
+          'Identificá todas las botellas visibles.',
           b64, file.type
         )
         const items = JSON.parse(txt.replace(/```json|```/g, '').trim())
-        items.forEach(it => agregarOSumar({ nombre: it.nombre, tipo: it.tipo, precio: it.precio_ars || 0 }))
-      } catch { alert('No pude analizar la imagen. Probá de nuevo.') }
+        let acc = [...botellas]
+        items.forEach(it => { acc = agregarOSumar({ nombre: it.nombre, tipo: it.tipo, precio: it.precio_ars || 0 }, acc) })
+        guardarBotellas(acc)
+      } catch { alert('No pude analizar la imagen.') }
       setLoadBarra(false)
     }
     r.readAsDataURL(file)
@@ -243,23 +303,25 @@ export default function App() {
     const cantidad = parseInt(cantStr) || 1
     setLoadBarra(true)
     try {
+      // Busca precio real con web search
       const txt = await api(
-        'Devolvé SOLO un número entero en pesos argentinos mayo 2025, sin texto ni símbolos. Usá precios reales de mercado argentino.',
-        `Precio promedio actual en Argentina de: ${nombre}`
+        'Buscá el precio actual de esta bebida en Argentina en sitios como Mercado Libre, Rappi o supermercados online. Devolvé SOLO un número entero en pesos argentinos, sin texto ni símbolos.',
+        `Precio actual en Argentina de: ${nombre}`,
+        null, null, true
       )
-      agregarOSumar({ nombre, tipo, precio: parseInt(txt.replace(/\D/g, '')) || 0, cantidad })
-    } catch { agregarOSumar({ nombre, tipo, precio: 0, cantidad }) }
+      guardarBotellas(agregarOSumar({ nombre, tipo, precio: parseInt(txt.replace(/\D/g, '')) || 0, cantidad }))
+    } catch { guardarBotellas(agregarOSumar({ nombre, tipo, precio: 0, cantidad })) }
     setLoadBarra(false)
   }
 
   const sugerirTragos = async () => {
-    if (!botellas.length) { alert('Primero agregá botellas a tu barra.'); return }
+    if (!botellas.length) { alert('Primero agregá botellas.'); return }
     setLoadTragos(true); setTragos([])
     try {
       const lista = botellas.map(b => b.nombre).join(', ')
       const txt = await api(
-        'Bartender sofisticado. Devolvé SOLO JSON array sin markdown. Nombres de tragos elegantes y poéticos. Cada objeto: {"nombre":"...","descripcion_corta":"...","receta":"...","guarnicion":"..."}.',
-        `Con estas bebidas: ${lista}. Sugerí 4 tragos posibles.`
+        'Bartender sofisticado. SOLO JSON array sin markdown. Nombres elegantes. Cada objeto: {"nombre":"...","descripcion_corta":"...","receta":"...","guarnicion":"..."}.',
+        `Con: ${lista}. Sugerí 4 tragos.`
       )
       setTragos(JSON.parse(txt.replace(/```json|```/g, '').trim()))
     } catch { }
@@ -272,8 +334,8 @@ export default function App() {
     setLoadTragos(true); setTragos([]); setNocheModo(false)
     try {
       const txt = await api(
-        'Bartender sofisticado. Devolvé SOLO JSON array sin markdown. Nombres elegantes y poéticos. Cada objeto: {"nombre":"...","descripcion_corta":"...","receta":"...","guarnicion":"..."}.',
-        `Mi barra: ${lista}. Esta noche quiero: ${prefs}. Armame una carta de 4 tragos especiales.`
+        'Bartender sofisticado. SOLO JSON array sin markdown. Nombres elegantes. Cada objeto: {"nombre":"...","descripcion_corta":"...","receta":"...","guarnicion":"..."}.',
+        `Mi barra: ${lista}. Esta noche: ${prefs}. Carta de 4 tragos especiales.`
       )
       setTragos(JSON.parse(txt.replace(/```json|```/g, '').trim()))
     } catch { }
@@ -286,32 +348,47 @@ export default function App() {
     setChatInput('')
     setMsgs(p => [...p, { role: 'user', text: txt }])
     setLoadChat(true)
-    const inv = botellas.length ? ' Mi barra: ' + botellas.map(b => `${b.nombre}${b.cantidad > 1 ? ` (×${b.cantidad})` : ''}`).join(', ') + '.' : ''
+    const inv = botellas.length ? ' Mi barra: ' + botellas.map(b => b.nombre).join(', ') + '.' : ''
     try {
-      const reply = await api(
-        `Sos un bartender sofisticado y elegante. Hablás en español rioplatense, con clase y brevedad.${inv}`,
-        txt
-      )
+      const reply = await api(`Bartender sofisticado, español rioplatense, con clase.${inv}`, txt)
       setMsgs(p => [...p, { role: 'bot', text: reply }])
     } catch {
-      setMsgs(p => [...p, { role: 'bot', text: 'Error de conexión. Probá de nuevo.' }])
+      setMsgs(p => [...p, { role: 'bot', text: 'Error de conexión.' }])
     }
     setLoadChat(false)
   }
 
+  // Agrupar por categoría
+  const grupos = {}
+  botellas.forEach(b => {
+    const cat = b.categoria || detectarCategoria(b.nombre, b.tipo || '')
+    if (!grupos[cat]) grupos[cat] = []
+    grupos[cat].push(b)
+  })
+
   const total = botellas.reduce((a, b) => a + (b.precio || 0) * (b.cantidad || 1), 0)
   const totalBotellas = botellas.reduce((a, b) => a + (b.cantidad || 1), 0)
-  const botSel = selIdx !== null ? botellas[selIdx] : null
+  const selData = getBotellaPorKey(selKey)
+  const botSel = selData?.botella
+
+  if (cargando) return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',flexDirection:'column',gap:16,background:'#05040A'}}>
+      <div style={{fontFamily:'Cormorant Garamond, serif',fontSize:28,color:'#C9A227',letterSpacing:4}}>KIKI BATTENDERS</div>
+      <div style={{fontSize:12,color:'#3A2A10',letterSpacing:3}}>CARGANDO LA BARRA...</div>
+    </div>
+  )
 
   return (
     <>
       <style>{css}</style>
       <div className="app">
-
         <div className="header">
           <div className="header-line" />
           <div className="logo">KIKI BATTENDERS</div>
-          <div className="logo-sub">Barra personal · IA</div>
+          <div className="sync-status">
+            <span className={`sync-dot${!guardando?' ok':''}`}/>
+            {guardando ? 'Guardando...' : 'Sincronizado'}
+          </div>
         </div>
 
         <div className="nav">
@@ -325,7 +402,6 @@ export default function App() {
         <div className="screen">
 
           {tab === 'barra' && <>
-
             {botellas.length > 0 && (
               <div className="valor-card">
                 <div>
@@ -337,71 +413,81 @@ export default function App() {
               </div>
             )}
 
-            <div className="shelf-label">Mi barra</div>
-            <div className="shelf-surface">
-              {botellas.length === 0 && <div className="shelf-empty">Tu barra está vacía — fotografiala para empezar</div>}
-              {botellas.map((b, i) => (
-                <div key={i} className={`bottle${selIdx===i?' active':''}`} onClick={() => setSelIdx(selIdx===i?null:i)}>
-                  {(b.cantidad || 1) > 1 && <div className="bottle-qty">×{b.cantidad}</div>}
-                  {b.foto
-                    ? <img src={b.foto} className="bottle-img" alt={b.nombre} />
-                    : <div className="bottle-emoji-box">{getEmoji(b.nombre)}</div>
-                  }
-                  <span className="bottle-label">{b.nombre.split(' ').slice(0,2).join(' ')}</span>
-                </div>
-              ))}
-            </div>
+            {botellas.length === 0 && (
+              <div className="empty">Tu barra está vacía<br/>Fotografiala para empezar</div>
+            )}
 
-            {botSel && (
-              <div className="bottle-detail">
-                <div className="bd-top">
-                  <label style={{cursor:'pointer'}}>
-                    {botSel.foto
-                      ? <img src={botSel.foto} className="bd-foto" alt={botSel.nombre} />
-                      : <div className="bd-foto-empty" title="Tocá para agregar foto">{getEmoji(botSel.nombre)}</div>
-                    }
-                    <input type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e => e.target.files[0] && subirFotoBotella(e.target.files[0], selIdx)} />
-                  </label>
-                  <div className="bd-info">
-                    <div className="bd-name">{botSel.nombre}</div>
-                    <div className="bd-type">{botSel.tipo}</div>
-                    <div className="bd-price">{botSel.precio ? '$'+botSel.precio.toLocaleString('es-AR') : '—'} <span style={{fontSize:11,color:'#3A2A10'}}>c/u</span></div>
-                  </div>
-                  <button className="bd-close" onClick={() => setSelIdx(null)}>✕</button>
+            {CATEGORIAS.filter(cat => grupos[cat]?.length > 0).map(cat => (
+              <div key={cat} className="cat-section">
+                <div className="cat-header">
+                  <span className="cat-icon">{CAT_EMOJI[cat]}</span>
+                  <span className="cat-name">{cat}</span>
+                  <span className="cat-count">{grupos[cat].reduce((a,b)=>a+(b.cantidad||1),0)} botellas</span>
+                </div>
+                <div className="shelf-surface">
+                  {grupos[cat].map((b, i) => {
+                    const key = `${cat}-${i}`
+                    return (
+                      <div key={i} className={`bottle${selKey===key?' active':''}`} onClick={() => { setSelKey(selKey===key?null:key); setEditPrecio(b.precio?.toString()||'') }}>
+                        {(b.cantidad || 1) > 1 && <div className="bottle-qty">×{b.cantidad}</div>}
+                        {b.foto
+                          ? <img src={b.foto} className="bottle-img" alt={b.nombre} />
+                          : <div className="bottle-emoji-box">{CAT_EMOJI[cat]}</div>
+                        }
+                        <span className="bottle-label">{b.nombre.split(' ').slice(0,2).join(' ')}</span>
+                      </div>
+                    )
+                  })}
                 </div>
 
-                <div className="qty-row">
-                  <span className="qty-label">Cantidad</span>
-                  <button className="qty-btn" onClick={() => cambiarCantidad(selIdx, -1)}>−</button>
-                  <span className="qty-num">{botSel.cantidad || 1}</span>
-                  <button className="qty-btn" onClick={() => cambiarCantidad(selIdx, +1)}>+</button>
-                </div>
+                {selKey?.startsWith(cat+'-') && botSel && (
+                  <div className="bottle-detail">
+                    <div className="bd-top">
+                      <label style={{cursor:'pointer'}}>
+                        {botSel.foto
+                          ? <img src={botSel.foto} className="bd-foto" alt={botSel.nombre} />
+                          : <div className="bd-foto-empty">{CAT_EMOJI[cat]}</div>
+                        }
+                        <input type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e => e.target.files[0] && subirFotoBotella(e.target.files[0], selKey)} />
+                      </label>
+                      <div className="bd-info">
+                        <div className="bd-name">{botSel.nombre}</div>
+                        <div className="bd-type">{botSel.tipo}</div>
+                      </div>
+                      <button className="bd-close" onClick={() => setSelKey(null)}>✕</button>
+                    </div>
 
-                <div className="bd-actions">
-                  <button className="btn sm gold" style={{flex:1}} onClick={() => { enviarChat(`¿Qué tragos puedo hacer con ${botSel.nombre}?`); setTab('chat') }}>¿Qué hago con esta?</button>
-                </div>
+                    <div className="price-row">
+                      <span style={{fontSize:10,color:'#3A2A10',letterSpacing:2,textTransform:'uppercase'}}>Precio</span>
+                      <input className="price-input" value={editPrecio} onChange={e => setEditPrecio(e.target.value)} placeholder="0" />
+                      <button className="btn sm gold" onClick={() => guardarPrecio(selKey)}>OK</button>
+                    </div>
 
-                {!botSel.foto && (
-                  <div style={{marginTop:10,fontSize:11,color:'#3A2A10',textAlign:'center',fontStyle:'italic'}}>
-                    Tocá la imagen para agregar foto de la botella
+                    <div className="qty-row">
+                      <span className="qty-label">Cantidad</span>
+                      <button className="qty-btn" onClick={() => cambiarCantidad(selKey, -1)}>−</button>
+                      <span className="qty-num">{botSel.cantidad || 1}</span>
+                      <button className="qty-btn" onClick={() => cambiarCantidad(selKey, +1)}>+</button>
+                    </div>
+
+                    <div className="bd-actions">
+                      <button className="btn sm gold" style={{flex:1}} onClick={() => { enviarChat(`¿Qué tragos puedo hacer con ${botSel.nombre}?`); setTab('chat') }}>¿Qué hago con esta?</button>
+                    </div>
+                    {!botSel.foto && <div style={{marginTop:10,fontSize:11,color:'#3A2A10',textAlign:'center',fontStyle:'italic'}}>Tocá la imagen para agregar foto</div>}
                   </div>
                 )}
               </div>
-            )}
+            ))}
 
             <div className="sep" />
-
             <label className="upload-zone">
               <span className="upload-icon">📸</span>
               <div className="upload-title">Fotografiá tu barra</div>
-              <div className="upload-sub">La IA identifica las botellas · Las repetidas suman cantidad</div>
+              <div className="upload-sub">La IA identifica y agrupa las botellas automáticamente</div>
               <input type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e => e.target.files[0] && analizarFotoGrupal(e.target.files[0])} />
             </label>
-
             <button className="btn full" onClick={agregarManual} style={{marginBottom:8}}>+ Agregar botella manualmente</button>
-
             {loadBarra && <div className="loading"><span className="spin">◌</span> &nbsp;Analizando...</div>}
-
           </>}
 
           {tab === 'carta' && <>
@@ -410,7 +496,6 @@ export default function App() {
               <div className="carta-sub">Tragos de tu barra · Esta noche</div>
               <div className="carta-divider" />
             </div>
-
             {!nocheModo ? (
               <>
                 <button className="btn full gold" onClick={sugerirTragos} style={{marginBottom:10}}>✦ &nbsp;Ver qué puedo preparar</button>
@@ -430,9 +515,7 @@ export default function App() {
                 </div>
               </div>
             )}
-
             {loadTragos && <div className="loading"><span className="spin">◌</span> &nbsp;Preparando la carta...</div>}
-
             {tragos.map((t, i) => (
               <div key={i} className="trago-card" onClick={() => setTragoOpen(tragoOpen===i?null:i)}>
                 <div className="trago-top">
@@ -449,10 +532,7 @@ export default function App() {
                 <div className="trago-toggle">{tragoOpen===i ? '▲ cerrar' : '▼ ver preparación'}</div>
               </div>
             ))}
-
-            {!tragos.length && !loadTragos && (
-              <div className="empty">Elegí una opción arriba para ver<br/>qué se puede preparar esta noche.</div>
-            )}
+            {!tragos.length && !loadTragos && <div className="empty">Elegí una opción arriba para ver<br/>qué se puede preparar esta noche.</div>}
           </>}
 
           {tab === 'chat' && (
