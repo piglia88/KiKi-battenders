@@ -92,8 +92,13 @@ function parsearPasos(receta) {
     .filter(l => l.length > 0)
 }
 
-function unsplashUrl(keywords) {
-  return `https://source.unsplash.com/400x300/?${encodeURIComponent(keywords)}`
+// Genera una URL de imagen de cóctel usando picsum con seed determinístico
+// como fallback confiable (source.unsplash.com está deprecado)
+function cocktailImageUrl(keywords, nombre) {
+  // Seed numérico basado en el nombre del trago para consistencia
+  const seed = Array.from(nombre || keywords || '').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 900 + 100
+  // Usamos picsum.photos que siempre funciona, con seed fijo por trago
+  return `https://picsum.photos/seed/${seed}/400/300`
 }
 
 // Calcular ADN de la barra
@@ -748,7 +753,7 @@ export default function App() {
       const base = JSON.parse(txt.replace(/```json|```/g, '').trim())
       const conFotos = await Promise.all(base.map(async t => {
         const kw = await getTragoKeywords(t.nombre, t.receta, t.clasico)
-        return { ...t, foto_url: unsplashUrl(kw), foto_kw: kw }
+        return { ...t, foto_url: cocktailImageUrl(kw, t.nombre), foto_kw: kw }
       }))
       setTragos(conFotos)
     } catch { }
@@ -787,7 +792,7 @@ export default function App() {
       const base = JSON.parse(txt.replace(/```json|```/g, '').trim())
       const conFotos = await Promise.all(base.map(async t => {
         const kw = await getTragoKeywords(t.nombre, t.receta, t.clasico)
-        return { ...t, foto_url: unsplashUrl(kw), foto_kw: kw }
+        return { ...t, foto_url: cocktailImageUrl(kw, t.nombre), foto_kw: kw }
       }))
       setTragos(conFotos)
     } catch { }
@@ -861,11 +866,16 @@ export default function App() {
           return (
             <div className="presentacion-overlay">
               <div className="pres-foto-wrap">
-                {tragoPres.foto_url
-                  ? <img src={tragoPres.foto_url} className="pres-foto" alt={tragoPres.nombre} onError={e => { e.target.style.display='none' }} />
-                  : null
-                }
-                <div className="pres-foto-placeholder" style={{display: tragoPres.foto_url ? 'none' : 'flex'}}>🍸</div>
+                <img
+                  src={tragoPres.foto_url}
+                  className="pres-foto"
+                  alt={tragoPres.nombre}
+                  onError={e => {
+                    e.target.style.display='none'
+                    e.target.nextElementSibling.style.display='flex'
+                  }}
+                />
+                <div className="pres-foto-placeholder" style={{display:'none'}}>🍸</div>
                 <div className="pres-foto-gradient" />
                 <button className="pres-close" onClick={() => { setTragoPres(null); stop() }}>✕</button>
               </div>
@@ -961,9 +971,11 @@ export default function App() {
                       <div key={i} className={`bottle${selKey===key?' active':''}`} onClick={() => { setSelKey(selKey===key?null:key); setEditPrecio(b.precio?.toString()||'') }}>
                         {(b.cantidad || 1) > 1 && <div className="bottle-qty">×{b.cantidad}</div>}
                         {b.foto
-                          ? <img src={b.foto} className="bottle-img" alt={b.nombre} />
-                          : <div className="bottle-emoji-box">{CAT_EMOJI[cat]}</div>
+                          ? <img src={b.foto} className="bottle-img" alt={b.nombre}
+                              onError={e => { e.target.style.display='none'; e.target.nextElementSibling.style.display='flex' }} />
+                          : null
                         }
+                        <div className="bottle-emoji-box" style={{display: b.foto ? 'none' : 'flex'}}>{CAT_EMOJI[cat]}</div>
                         <span className="bottle-label">{b.nombre.split(' ').slice(0,2).join(' ')}</span>
                       </div>
                     )
@@ -975,9 +987,11 @@ export default function App() {
                     <div className="bd-top">
                       <label style={{cursor:'pointer'}}>
                         {botSel.foto
-                          ? <img src={botSel.foto} className="bd-foto" alt={botSel.nombre} />
-                          : <div className="bd-foto-empty">{CAT_EMOJI[cat]}</div>
+                          ? <img src={botSel.foto} className="bd-foto" alt={botSel.nombre}
+                              onError={e => { e.target.style.display='none'; e.target.nextElementSibling.style.display='flex' }} />
+                          : null
                         }
+                        <div className="bd-foto-empty" style={{display: botSel.foto ? 'none' : 'flex'}}>{CAT_EMOJI[cat]}</div>
                         <input type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e => e.target.files[0] && subirFotoBotella(e.target.files[0], selKey)} />
                       </label>
                       <div className="bd-info">
@@ -1063,10 +1077,16 @@ export default function App() {
               return (
                 <div key={i} className="trago-card">
                   <div className="trago-foto-wrap" onClick={() => setTragoPres(t)}>
-                    {t.foto_url
-                      ? <img src={t.foto_url} className="trago-foto" alt={t.nombre} onError={e => { e.target.style.display='none' }} />
-                      : <div className="trago-foto-placeholder">🍸</div>
-                    }
+                    <img
+                      src={t.foto_url}
+                      className="trago-foto"
+                      alt={t.nombre}
+                      onError={e => {
+                        e.target.style.display='none'
+                        e.target.nextElementSibling.style.display='flex'
+                      }}
+                    />
+                    <div className="trago-foto-placeholder" style={{display:'none'}}>🍸</div>
                     <div className="trago-foto-overlay">
                       <div style={{fontFamily:'Cormorant Garamond,serif',fontSize:22,color:'#E8D08A',lineHeight:1}}>{t.nombre}</div>
                     </div>
