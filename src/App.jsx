@@ -92,13 +92,32 @@ function parsearPasos(receta) {
     .filter(l => l.length > 0)
 }
 
-// Genera una URL de imagen de cóctel usando picsum con seed determinístico
-// como fallback confiable (source.unsplash.com está deprecado)
-function cocktailImageUrl(keywords, nombre) {
-  // Seed numérico basado en el nombre del trago para consistencia
-  const seed = Array.from(nombre || keywords || '').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 900 + 100
-  // Usamos picsum.photos que siempre funciona, con seed fijo por trago
-  return `https://picsum.photos/seed/${seed}/400/300`
+// Busca URL real de imagen para un trago usando web search de Claude
+async function getTragoImageUrl(nombre, ingredientes, esClasico) {
+  try {
+    const prompt = esClasico
+      ? `Buscá en la web una foto real del cóctel clásico "${nombre}". Devolvé SOLO la URL directa de la imagen (debe terminar en .jpg, .jpeg, .png o .webp). Sin texto extra, sin markdown.`
+      : `Buscá en la web una foto de un cóctel que tenga estos ingredientes: ${ingredientes}. Se llama "${nombre}". Devolvé SOLO la URL directa de la imagen más atractiva que encuentres (debe terminar en .jpg, .jpeg, .png o .webp). Sin texto extra.`
+    const url = await api(
+      'Buscás imágenes de cócteles en la web. Devolvés SOLO la URL directa de la imagen, sin texto ni markdown.',
+      prompt, null, null, true
+    )
+    const match = url.match(/https?:\/\/[^\s"'<>]+\.(jpg|jpeg|png|webp)/i)
+    return match ? match[0] : null
+  } catch { return null }
+}
+
+// Busca URL real de imagen para una botella de bebida
+async function getBotellaImageUrl(nombre) {
+  try {
+    const url = await api(
+      'Buscás imágenes de botellas de bebidas alcohólicas. Devolvés SOLO la URL directa de la imagen PNG o JPG del packaging oficial, sin texto ni markdown.',
+      `Buscá en la web una foto del packaging oficial de la botella: "${nombre}". Devolvé SOLO la URL directa de la imagen (termina en .jpg, .jpeg, .png o .webp). Sin texto extra.`,
+      null, null, true
+    )
+    const match = url.match(/https?:\/\/[^\s"'<>]+\.(jpg|jpeg|png|webp)/i)
+    return match ? match[0] : null
+  } catch { return null }
 }
 
 // Calcular ADN de la barra
@@ -216,15 +235,7 @@ async function api(system, user, imgB64, imgType, useWebSearch = false) {
   return data.textOnly || data.content?.find(c => c.type === 'text')?.text || ''
 }
 
-async function getTragoKeywords(nombre, receta, esClasico) {
-  try {
-    const prompt = esClasico
-      ? `Devolvé SOLO 4-5 palabras clave en inglés separadas por comas para buscar una foto del cóctel "${nombre}" en Unsplash. Sin texto extra.`
-      : `Ingredientes de "${nombre}": ${receta}. Devolvé SOLO 4-5 palabras clave en inglés para buscar una foto contextual de este cóctel en Unsplash. Sin texto extra.`
-    const kw = await api('Generás keywords para búsqueda de imágenes. Solo palabras clave, sin explicación.', prompt)
-    return kw.trim().replace(/['"]/g, '')
-  } catch { return 'cocktail drink elegant' }
-}
+
 
 // Componente Pasos Animados
 function PasosAnimados({ pasos, className = '', autoPlay = true }) {
@@ -707,7 +718,13 @@ export default function App() {
         )
         const items = JSON.parse(txt.replace(/```json|```/g, '').trim())
         let acc = [...botellas]
-        items.forEach(it => { acc = agregarOSumar({ nombre: it.nombre, tipo: it.tipo, precio: it.precio_ars || 0 }, acc) })
+        // Buscar fotos en paralelo para botellas nuevas
+        const itemsConFoto = await Promise.all(items.map(async it => {
+          const yaExiste = acc.find(b => b.nombre.toLowerCase() === it.nombre.toLowerCase())
+          const foto_web = (!yaExiste || !yaExiste.foto_web) ? await getBotellaImageUrl(it.nombre) : (yaExiste.foto_web || null)
+          return { nombre: it.nombre, tipo: it.tipo, precio: it.precio_ars || 0, foto_web }
+        }))
+        itemsConFoto.forEach(it => { acc = agregarOSumar(it, acc) })
         guardarBotellas(acc)
       } catch { alert('No pude analizar la imagen.') }
       setLoadBarra(false)
@@ -728,8 +745,12 @@ export default function App() {
         `Precio actual en Argentina de: ${nombre}`,
         null, null, true
       )
-      guardarBotellas(agregarOSumar({ nombre, tipo, precio: parseInt(txt.replace(/\D/g, '')) || 0, cantidad }))
-    } catch { guardarBotellas(agregarOSumar({ nombre, tipo, precio: 0, cantidad })) }
+      const foto_web = await getBotellaImageUrl(nombre)
+      guardarBotellas(agregarOSumar({ nombre, tipo, precio: parseInt(txt.replace(/\D/g, '')) || 0, cantidad, foto_web }))
+    } catch {
+      const foto_web = await getBotellaImageUrl(nombre)
+      guardarBotellas(agregarOSumar({ nombre, tipo, precio: 0, cantidad, foto_web }))
+    }
     setLoadBarra(false)
   }
 
@@ -752,8 +773,8 @@ export default function App() {
       )
       const base = JSON.parse(txt.replace(/```json|```/g, '').trim())
       const conFotos = await Promise.all(base.map(async t => {
-        const kw = await getTragoKeywords(t.nombre, t.receta, t.clasico)
-        return { ...t, foto_url: cocktailImageUrl(kw, t.nombre), foto_kw: kw }
+        const foto_url = await getTragoImageUrl(t.nombre, t.receta, t.clasico)
+        return { ...t, foto_url }
       }))
       setTragos(conFotos)
     } catch { }
@@ -791,8 +812,8 @@ export default function App() {
       )
       const base = JSON.parse(txt.replace(/```json|```/g, '').trim())
       const conFotos = await Promise.all(base.map(async t => {
-        const kw = await getTragoKeywords(t.nombre, t.receta, t.clasico)
-        return { ...t, foto_url: cocktailImageUrl(kw, t.nombre), foto_kw: kw }
+        const foto_url = await getTragoImageUrl(t.nombre, t.receta, t.clasico)
+        return { ...t, foto_url }
       }))
       setTragos(conFotos)
     } catch { }
@@ -970,12 +991,12 @@ export default function App() {
                     return (
                       <div key={i} className={`bottle${selKey===key?' active':''}`} onClick={() => { setSelKey(selKey===key?null:key); setEditPrecio(b.precio?.toString()||'') }}>
                         {(b.cantidad || 1) > 1 && <div className="bottle-qty">×{b.cantidad}</div>}
-                        {b.foto
-                          ? <img src={b.foto} className="bottle-img" alt={b.nombre}
+                        {(b.foto_web || b.foto)
+                          ? <img src={b.foto_web || b.foto} className="bottle-img" alt={b.nombre}
                               onError={e => { e.target.style.display='none'; e.target.nextElementSibling.style.display='flex' }} />
                           : null
                         }
-                        <div className="bottle-emoji-box" style={{display: b.foto ? 'none' : 'flex'}}>{CAT_EMOJI[cat]}</div>
+                        <div className="bottle-emoji-box" style={{display: (b.foto_web || b.foto) ? 'none' : 'flex'}}>{CAT_EMOJI[cat]}</div>
                         <span className="bottle-label">{b.nombre.split(' ').slice(0,2).join(' ')}</span>
                       </div>
                     )
@@ -986,12 +1007,12 @@ export default function App() {
                   <div className="bottle-detail">
                     <div className="bd-top">
                       <label style={{cursor:'pointer'}}>
-                        {botSel.foto
-                          ? <img src={botSel.foto} className="bd-foto" alt={botSel.nombre}
+                        {(botSel.foto_web || botSel.foto)
+                          ? <img src={botSel.foto_web || botSel.foto} className="bd-foto" alt={botSel.nombre}
                               onError={e => { e.target.style.display='none'; e.target.nextElementSibling.style.display='flex' }} />
                           : null
                         }
-                        <div className="bd-foto-empty" style={{display: botSel.foto ? 'none' : 'flex'}}>{CAT_EMOJI[cat]}</div>
+                        <div className="bd-foto-empty" style={{display: (botSel.foto_web || botSel.foto) ? 'none' : 'flex'}}>{CAT_EMOJI[cat]}</div>
                         <input type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e => e.target.files[0] && subirFotoBotella(e.target.files[0], selKey)} />
                       </label>
                       <div className="bd-info">
@@ -1016,12 +1037,22 @@ export default function App() {
 
                     <div className="bd-actions">
                       <button className="btn sm gold" style={{flex:1}} onClick={() => { enviarChat(`¿Qué tragos puedo hacer con ${botSel.nombre}?`); setTab('chat') }}>¿Qué hago con esta?</button>
+                      <button className="btn sm" onClick={async () => {
+                        const { cat, localIdx } = getBotellaPorKey(selKey)
+                        const gIdx = getGlobalIdx(cat, localIdx)
+                        setLoadBarra(true)
+                        const foto_web = await getBotellaImageUrl(botSel.nombre)
+                        if (foto_web) {
+                          const copia = [...botellas]
+                          copia[gIdx] = { ...copia[gIdx], foto_web }
+                          guardarBotellas(copia)
+                        }
+                        setLoadBarra(false)
+                      }}>📷 Foto</button>
                     </div>
 
                     {/* Pairing Sommelier */}
                     <PairingSommelier botella={botSel} personalidadId={personalidadId} />
-
-                    {!botSel.foto && <div style={{marginTop:10,fontSize:11,color:'#3A2A10',textAlign:'center',fontStyle:'italic'}}>Tocá la imagen para agregar foto</div>}
                   </div>
                 )}
               </div>
